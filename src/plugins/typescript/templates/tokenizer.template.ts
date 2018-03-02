@@ -106,7 +106,7 @@ const lexRules: [RegExp, string][] = {{{LEX_RULES}}};
  * with actual data received from Syntax tool.
  *
  */
-const lexRulesByConditions = {{{LEX_RULES_BY_START_CONDITIONS}}};
+const lexRulesByConditions: { [key: string]: number[] } = {{{LEX_RULES_BY_START_CONDITIONS}}};
 
 // --------------------------------------------------------------
 
@@ -137,7 +137,7 @@ class Tokenizer {
     /**
      * Stack of lexer states.
      */
-    private _states: string[] = ['INITIAL'];
+    private _states: string[] = null;
 
     /**
      *  Cursor tracking current position.
@@ -147,19 +147,19 @@ class Tokenizer {
     /**
      * Line-based location tracking.
      */
-    private _currentLine = 1;
-    private _currentColumn = 0;
-    private _currentLineBeginOffset = 0;
+    private _currentLine: number;
+    private _currentColumn: number;
+    private _currentLineBeginOffset: number;
 
     /**
      * Location data of a matched token.
      */
-    private _tokenStartOffset = 0;
-    private _tokenEndOffset = 0;
-    private _tokenStartLine = 0;
-    private _tokenEndLine = 0;
-    private _tokenStartColumn = 0;
-    private _tokenEndColumn = 0;
+    private _tokenStartOffset: number;
+    private _tokenEndOffset: number;
+    private _tokenStartLine: number;
+    private _tokenEndLine: number;
+    private _tokenStartColumn: number;
+    private _tokenEndColumn: number;
 
     /**
      * In case if a token handler returns multiple tokens from one rule,
@@ -167,10 +167,60 @@ class Tokenizer {
      * other "fake" tokens into the queue. If there is still something in
      * this queue, it's just returned.
      */
-    private _tokensQueue: string[] = [];
+    private _tokensQueue: string[] = null;
 
-    constructor(tokenizingString: string = null) {
+    initString(tokenizingString: string): void {
+        /**
+         * A tokenizing string.
+         */
         this._string = tokenizingString;
+    
+        /**
+         * Stack of the tokenizer states. Initialized to the `INITIAL` state.
+         */
+        this._states = ['INITIAL'];
+    
+        /**
+         *  Cursor tracking current position.
+         */
+        this._cursor = 0;
+    
+        /**
+         * In case if a token handler returns multiple tokens from one rule,
+         * we still return tokens one by one in the `getNextToken`, putting
+         * other "fake" tokens into the queue. If there is still something in
+         * this queue, it's just returned.
+         */
+        this._tokensQueue = [];
+    
+        /**
+         * Current line number.
+         */
+        this._currentLine = 1;
+    
+        /**
+         * Current column number.
+         */
+        this._currentColumn = 0;
+    
+        /**
+         * Current offset of the beginning of the current line.
+         *
+         * Since new lines can be handled by the lex rules themselves,
+         * we scan an extracted token for `\n`s, and calculate start/end
+         * locations of tokens based on the `currentLine`/`currentLineBeginOffset`.
+         */
+        this._currentLineBeginOffset = 0;
+    
+        /**
+         * Matched token location data.
+         */
+        this._tokenStartOffset = 0;
+        this._tokenEndOffset = 0;
+        this._tokenStartLine = 1;
+        this._tokenEndLine = 1;
+        this._tokenStartColumn = 0;
+        this._tokenEndColumn = 0;
     }
 
     /**
@@ -205,19 +255,19 @@ class Tokenizer {
         }
 
         // Get the rest of the string which is not analyzed yet.
-        let string = this._string.slice(this._cursor);
+        const string = this._string.slice(this._cursor);
 
         // This tokenizer supports states, so get the lexical rules
         // for the current state.
-        let lexRulesForState = lexRulesByConditions[this._getCurrentState()];
+        const lexRulesForState = lexRulesByConditions[this.getCurrentState()];
 
         for (let i = 0; i < lexRulesForState.length; i++) {
 
             // Get the actual lexical rule.
-            let lexRuleIndex = lexRulesForState[i];
-            let lexRule = lexRules[lexRuleIndex];
+            const lexRuleIndex = lexRulesForState[i];
+            const lexRule = lexRules[lexRuleIndex];
 
-            let matched = this._match(string, lexRule[0]);
+            const matched = this._match(string, lexRule[0]);
 
             // Manual handling of EOF token (the end of string). Return it
             // as `EOF` symbol.
@@ -234,7 +284,7 @@ class Tokenizer {
                 // Use any reflection method in your language to get an actual method.
                 // In JavaScript it's done by `this[lexRule[1]]` to get the method.
 
-                let tokenHandler = this[lexRule[1]];
+                const tokenHandler = this[lexRule[1]];
                 let tokenType = tokenHandler.call(this);
 
                 // A handler may return `null` (e.g. skip whitespace not returning
@@ -286,7 +336,7 @@ class Tokenizer {
      * line from the source, pointing with the ^ marker to the bad token.
      * In addition, shows `line:column` location.
      */
-    throwUnexpectedToken(symbol, line, column) {
+    throwUnexpectedToken(symbol: string, line: number, column: number): void {
         const lineSource = this._string.split('\n')[line - 1];
 
         const pad = ' '.repeat(column);
@@ -301,20 +351,24 @@ class Tokenizer {
     // --------------------------------------------
     // States.
 
-    private _getCurrentState(): string {
+    getCurrentState(): string {
         return this._states[this._states.length - 1];
     }
 
-    private _pushState(state: string): void {
+    pushState(state: string): void {
         this._states.push(state);
     }
 
-    private _popState(): string {
+    popState(): string {
         if (this._states.length > 1) {
             return this._states.pop();
         }
 
-        return this._getCurrentState();
+        return this.getCurrentState();
+    }
+
+    begin(state: string): void {
+        this.pushState(state);
     }
 
     // --------------------------------------------
@@ -358,7 +412,7 @@ class Tokenizer {
         );
     }
 
-    private _match(string: string, regexp: RegExp) {
+    private _match(string: string, regexp: RegExp): string {
         const matched = string.match(regexp);
         if (matched) {
             // Handle `\n` in the matched token to track line numbers.
@@ -369,10 +423,4 @@ class Tokenizer {
 
         return null;
     }
-
-    /* TODO: Remove
-    get(): string {
-        return this.string;
-    }
-    */
 }

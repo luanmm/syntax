@@ -86,12 +86,20 @@ const productions: any[][] = {{{PRODUCTIONS}}};
 const table: object[] = {{{TABLE}}};
 
 // --------------------------------------------------------------
-// Global options
+// Global variable yy
 
 /**
- * Whether locations should be captured and propagated.
+ * Storage object.
  */
-const shouldCaptureLocations = {{{CAPTURE_LOCATIONS}}};
+let yy = {
+
+    // Parser options
+    options: {
+
+        // Capture locations?
+        captureLocations: {{{CAPTURE_LOCATIONS}}}
+    }
+};
 
 // --------------------------------------------------------------
 // Global variable __
@@ -126,7 +134,7 @@ class YyLoc {
 }
 
 function yyloc(start: YyLoc, end: YyLoc): YyLoc {
-    if (!shouldCaptureLocations) {
+    if (!yy.options.captureLocations) {
         return null;
     }
 
@@ -174,40 +182,37 @@ class StackEntry {
  */
 class yyparse {
 
+    private _tokenizer: Tokenizer = new Tokenizer();
+
     /**
      * On parse begin callback.
      *
      * Example: parser.onParseBegin = (string code) => { ... };
      */
-    onParseBegin: (code: string) => void = null;
+    static onParseBegin: (code: string, tokenizer: Tokenizer) => void = null;
 
     /**
      * On parse end callback.
      *
      * Example: parser.onParseEnd = (object parsed) => { ... };
      */
-    onParseEnd: (parsed: object) => void = null;
-
-    /**
-     * Tokenizer instance.
-     */
-    tokenizer: Tokenizer = null;
+    static onParseEnd: (parsed: object) => void = null;
 
     /**
      * Main parsing method which applies LR-algorithm.
      */
     parse(value: string): object {
         // On parse begin hook.
-        if (this.onParseBegin != null) {
-            this.onParseBegin(value);
+        if (yyparse.onParseBegin != null) {
+            yyparse.onParseBegin(value, this._tokenizer);
         }
 
-        const tokenizer = new Tokenizer(value);
+        this._tokenizer.initString(value);
 
         // Initialize the parsing stack to the initial state 0.
         const stack: any[] = [0];
 
-        let token = this.tokenizer.getNextToken();
+        let token = this._tokenizer.getNextToken();
         let shiftedToken = null;
 
         // Main parsing loop.
@@ -231,7 +236,7 @@ class yyparse {
             if (entry[0] == 's') {
                 let loc: YyLoc = null;
 
-                if (shouldCaptureLocations) {
+                if (yy.options.captureLocations) {
                     loc = new YyLoc(
                         token.startOffset,
                         token.endOffset,
@@ -249,7 +254,7 @@ class yyparse {
                 stack.push(Number(entry.slice(1)));
 
                 shiftedToken = token;
-                token = this.tokenizer.getNextToken();
+                token = this._tokenizer.getNextToken();
             }
 
             // ---------------------------------------------------
@@ -271,7 +276,7 @@ class yyparse {
                 const semanticValueArgs = hasSemanticAction ? [] : null;
 
                 const locationArgs = (
-                    hasSemanticAction && shouldCaptureLocations
+                    hasSemanticAction && yy.options.captureLocations
                         ? []
                         : null
                 );
@@ -356,17 +361,19 @@ class yyparse {
 
                 if (stack.length != 1 ||
                     stack[stack.length - 1] != 0 ||
-                    this.tokenizer.hasMoreTokens()) {
+                    this._tokenizer.hasMoreTokens()) {
                     this.unexpectedToken(token);
                 }
 
                 const parsedValue = parsed.semanticValue;
-                this.onParseEnd(parsedValue);
+                if (yyparse.onParseEnd != null) {
+                    yyparse.onParseEnd(parsedValue);
+                }
 
                 return parsedValue;
             }
 
-        } while (this.tokenizer.hasMoreTokens() || stack.length > 1);
+        } while (this._tokenizer.hasMoreTokens() || stack.length > 1);
 
         return null;
     }
@@ -376,7 +383,7 @@ class yyparse {
             this.unexpectedEndOfInput();
         }
 
-        this.tokenizer.throwUnexpectedToken(
+        this._tokenizer.throwUnexpectedToken(
             token.value,
             token.startLine,
             token.startColumn
@@ -392,6 +399,8 @@ class yyparse {
     }
 
 }
+
+{{{MODULE_INCLUDE}}}
 
 /**
  * An actual parser class.
